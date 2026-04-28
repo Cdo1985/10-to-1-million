@@ -39,11 +39,11 @@ export const Hero: React.FC = () => {
         className="text-center max-w-4xl px-4"
       >
         <h1 className="text-5xl sm:text-7xl lg:text-8xl font-black tracking-tighter text-white mb-8 leading-[0.9]">
-          $0.10 <span className="text-zinc-700">TO</span> <br className="hidden sm:block" />
+          $10 <span className="text-zinc-700">TO</span> <br className="hidden sm:block" />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-500 via-blue-400 to-emerald-400">$1,000,000</span>
         </h1>
         <p className="text-lg sm:text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-12">
-          Deploy a personal AI agent for just $0.10 USDC. It grinds micro-tasks, optimizes yield, and executes strategies autonomously — fully on-chain.
+          Deploy a personal AI agent with a $10 USDC starting stake. It grinds micro-tasks, optimizes yield, and executes strategies autonomously — fully on-chain.
         </p>
       </motion.div>
 

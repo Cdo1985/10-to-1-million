@@ -23,7 +23,10 @@ export const AgentCreation: React.FC<AgentCreationProps> = ({ onBack, onConfirm 
     name: '',
     personality: 'efficient',
     riskTolerance: 40,
-    primaryFocus: 'defi'
+    primaryFocus: 'defi',
+    targetRoi: 500,
+    operatingPath: 'Base Mainnet -> Aerodrome -> Uniswap',
+    targetOutcomeTime: '180 Days'
   });
 
   const personalities = [
@@ -146,6 +149,39 @@ export const AgentCreation: React.FC<AgentCreationProps> = ({ onBack, onConfirm 
                 <span>Safe</span>
                 <span>Balanced</span>
                 <span>Hyper</span>
+              </div>
+            </div>
+
+            {/* Strategic Targets */}
+            <div className="space-y-4 pt-4 border-t border-zinc-900">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Target ROI (%)</label>
+                  <input 
+                    type="number"
+                    value={config.targetRoi}
+                    onChange={(e) => setConfig({ ...config, targetRoi: parseInt(e.target.value) })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Est. Duration</label>
+                  <input 
+                    type="text"
+                    value={config.targetOutcomeTime}
+                    onChange={(e) => setConfig({ ...config, targetOutcomeTime: e.target.value })}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-blue-500 transition-all"
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Execution Path</label>
+                <input 
+                  type="text"
+                  value={config.operatingPath}
+                  onChange={(e) => setConfig({ ...config, operatingPath: e.target.value })}
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-xs text-blue-400 outline-none focus:border-blue-500 transition-all font-mono"
+                />
               </div>
             </div>
 
