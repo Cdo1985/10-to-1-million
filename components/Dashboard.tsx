@@ -14,10 +14,16 @@ import {
   GripVertical,
   Rocket,
   Filter,
-  ArrowDownAz
+  ArrowDownAz,
+  BookOpen,
+  HelpCircle
 } from 'lucide-react';
 import { Reorder } from 'motion/react';
 import { cn } from '@/lib/utils';
+import { useAccount, useBalance } from 'wagmi';
+import { ConnectKitButton } from 'connectkit';
+import { USDC_ADDRESS } from '../lib/web3';
+import { fetchLogs, simulateTask } from '../lib/backendService';
 
 // --- Types ---
 interface TaskLog {
@@ -125,12 +131,20 @@ const ProgressBar = ({ current, target }: { current: number, target: number }) =
 // --- Main Dashboard ---
 
 export const Dashboard: React.FC = () => {
+  const { isConnected, address } = useAccount();
+  const { data: usdcBalance } = useBalance({
+    address,
+    token: USDC_ADDRESS,
+  });
+
   const [logs, setLogs] = useState<TaskLog[]>([]);
   const terminalRef = useRef<HTMLDivElement>(null);
-  const [activeTab, setActiveTab] = useState<'terminal' | 'strategy' | 'config'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'strategy' | 'config' | 'guide'>('terminal');
   const [selectedTask, setSelectedTask] = useState<StrategyTask | null>(null);
+  const [statusToggleTask, setStatusToggleTask] = useState<StrategyTask | null>(null);
   const [filterStatus, setFilterStatus] = useState<'All' | 'ACTIVE' | 'IDLE'>('All');
   const [sortBy, setSortBy] = useState<'order' | 'priority' | 'name'>('order');
+  
   const [config, setConfig] = useState({
     riskTolerance: 40,
     maxGas: 0.5,
@@ -248,11 +262,11 @@ export const Dashboard: React.FC = () => {
   // Parse URL params
   const searchParams = new URLSearchParams(window.location.search);
   const username = searchParams.get('username') || 'Anonymous';
-  const balance = parseFloat(searchParams.get('balance') || '0.10');
+  const balance = parseFloat(usdcBalance?.formatted || '0.10');
   const netProfit = parseFloat(searchParams.get('netProfit') || '0.00');
   const progressPercent = parseFloat(searchParams.get('progress') || '0');
 
-  // Simulation Logic
+  // Simulation & Sync Logic
   useEffect(() => {
     const messages = [
       { msg: "Scanning Farcaster for micro-gigs...", type: 'info' },
@@ -265,20 +279,57 @@ export const Dashboard: React.FC = () => {
       { msg: "Arbitrage opportunity detected: WETH/USDC", type: 'microtask', amount: "0.021" },
     ];
 
-    const interval = setInterval(() => {
-      const randomMsg = messages[Math.floor(Math.random() * messages.length)];
-      const newLog: TaskLog = {
-        id: Math.random().toString(36).substr(2, 9),
-        timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        message: randomMsg.msg,
-        type: randomMsg.type as any,
-        amount: randomMsg.amount
-      };
-      setLogs(prev => [...prev.slice(-49), newLog]);
-    }, 2000);
+    const syncWithBackend = async () => {
+      try {
+        const backendLogs = await fetchLogs();
+        setLogs(prev => {
+          const existingIds = new Set(prev.map(l => l.id));
+          const newItems = backendLogs.filter((l: any) => !existingIds.has(l.id));
+          return [...prev, ...newItems].slice(-100);
+        });
+      } catch (err) {
+        console.error("Sync error", err);
+      }
+    };
 
-    return () => clearInterval(interval);
+    const intervalLocal = setInterval(() => {
+      if (Math.random() > 0.7) { // Only occasionally add local simulation to keep it lively
+        const randomMsg = messages[Math.floor(Math.random() * messages.length)];
+        const newLog: TaskLog = {
+          id: 'local-' + Math.random().toString(36).substr(2, 9),
+          timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          message: randomMsg.msg,
+          type: randomMsg.type as any,
+          amount: randomMsg.amount
+        };
+        setLogs(prev => [...prev.slice(-99), newLog]);
+      }
+    }, 3000);
+
+    const intervalBackend = setInterval(syncWithBackend, 5000);
+
+    return () => {
+      clearInterval(intervalLocal);
+      clearInterval(intervalBackend);
+    };
   }, []);
+
+  // Trigger real backend simulation based on active tasks
+  useEffect(() => {
+    const triggerBackendTask = async () => {
+      const activeTask = tasks.find(t => t.status === 'ACTIVE');
+      if (activeTask) {
+        try {
+          await simulateTask(activeTask.title);
+        } catch (err) {
+          console.error("Backend simulation error", err);
+        }
+      }
+    };
+
+    const interval = setInterval(triggerBackendTask, 15000);
+    return () => clearInterval(interval);
+  }, [tasks]);
 
   // Auto-scroll terminal
   useEffect(() => {
@@ -307,10 +358,17 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <button className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors flex items-center gap-2">
-            <ShieldCheck size={16} className="text-emerald-500" />
-            0x4f...a2e1
-          </button>
+          <ConnectKitButton.Custom>
+            {({ isConnected, show, address }) => (
+              <button 
+                onClick={show}
+                className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm font-medium hover:bg-zinc-800 transition-colors flex items-center gap-2"
+              >
+                <ShieldCheck size={16} className={isConnected ? "text-emerald-500" : "text-zinc-500"} />
+                {isConnected ? `${address?.substring(0, 6)}...${address?.substring(address.length - 4)}` : "Connect Wallet"}
+              </button>
+            )}
+          </ConnectKitButton.Custom>
           <button className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition-all shadow-lg shadow-blue-900/20 active:scale-95">
             Collect $USDC
           </button>
@@ -399,6 +457,15 @@ export const Dashboard: React.FC = () => {
                 )}
               >
                 Agent Config
+              </button>
+              <button 
+                onClick={() => setActiveTab('guide')}
+                className={cn(
+                  "px-6 py-3 text-sm font-bold transition-all border-b-2",
+                  activeTab === 'guide' ? "border-blue-500 text-blue-400 bg-blue-500/5" : "border-transparent text-zinc-500 hover:text-zinc-300"
+                )}
+              >
+                User Guide
               </button>
             </div>
             
@@ -502,10 +569,16 @@ export const Dashboard: React.FC = () => {
                             <option value="Medium">MED</option>
                             <option value="Low">LOW</option>
                           </select>
-                          <div className={cn(
-                            "text-right font-mono text-[10px] font-bold px-2 py-0.5 rounded-full",
-                            task.status === 'ACTIVE' ? "text-emerald-400 bg-emerald-500/10" : "text-zinc-500 bg-zinc-800"
-                          )}>
+                          <div 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStatusToggleTask(task);
+                            }}
+                            className={cn(
+                              "text-right font-mono text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer hover:scale-105 transition-transform",
+                              task.status === 'ACTIVE' ? "text-emerald-400 bg-emerald-500/10" : "text-zinc-500 bg-zinc-800"
+                            )}
+                          >
                             {task.status}
                           </div>
                         </div>
@@ -518,7 +591,7 @@ export const Dashboard: React.FC = () => {
                       : "Sorting/Filtering active • Click to view details"}
                   </p>
                 </div>
-              ) : (
+              ) : activeTab === 'config' ? (
                 <div className="p-6 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-300">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                     {/* Risk Tolerance */}
@@ -616,6 +689,93 @@ export const Dashboard: React.FC = () => {
                       Reset
                     </button>
                   </div>
+                </div>
+              ) : (
+                <div className="p-8 space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-300 max-w-4xl mx-auto">
+                  
+                  {/* Guide Introduction */}
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 bg-blue-500/10 text-blue-400 rounded-xl shrink-0">
+                      <BookOpen size={24} />
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-zinc-100 mb-2">Mastering Ten to One Million</h2>
+                      <p className="text-zinc-500 text-sm leading-relaxed">
+                        Welcome to your AI Agent Controller. Your agent is a high-frequency micro-earner designed to autonomously scale a 10 USDC stake to 1,000,000 USDC through strategic on-chain operations.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* FAQ Sections */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-zinc-100 font-bold">
+                        <Cpu size={18} className="text-blue-500" />
+                        <h3>Agent Configuration</h3>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="bg-zinc-800/30 border border-zinc-800 p-4 rounded-xl">
+                          <p className="text-zinc-300 text-xs font-bold mb-1">Risk Tolerance</p>
+                          <p className="text-zinc-500 text-[11px] leading-relaxed">Adjusts the aggressiveness of the agent. <span className="text-rose-400/80">Degenerate</span> mode chases higher APY but faces greater potential for slippage and failed transactions.</p>
+                        </div>
+                        <div className="bg-zinc-800/30 border border-zinc-800 p-4 rounded-xl">
+                          <p className="text-zinc-300 text-xs font-bold mb-1">Gas Safeguard</p>
+                          <p className="text-zinc-500 text-[11px] leading-relaxed">The agent monitors Base network gas prices in real-time. Operations pause if gas exceeds your limit to ensure micro-profits aren't eaten by fees.</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-zinc-100 font-bold">
+                        <Zap size={18} className="text-amber-500" />
+                        <h3>Task Strategies</h3>
+                      </div>
+                      <div className="space-y-4">
+                        <div className="bg-zinc-800/30 border border-zinc-800 p-4 rounded-xl">
+                          <p className="text-zinc-300 text-xs font-bold mb-1">Manual Priority</p>
+                          <p className="text-zinc-500 text-[11px] leading-relaxed">In the Task Strategy tab, you can drag and drop tasks to set execution priority. The agent processes tasks from the top down.</p>
+                        </div>
+                        <div className="bg-zinc-800/30 border border-zinc-800 p-4 rounded-xl">
+                          <p className="text-zinc-300 text-xs font-bold mb-1">Unlocking Growth</p>
+                          <p className="text-zinc-500 text-[11px] leading-relaxed">New strategies like 'Flash Loan Arbitrage' and 'Yield Farming' unlock automatically as your balance hits key milestones ($10, $100, $1,000).</p>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+
+                  {/* On-Chain Payments Section */}
+                  <div className="bg-blue-600/5 border border-blue-500/20 rounded-2xl p-6">
+                    <div className="flex items-center gap-2 text-blue-400 font-bold mb-4">
+                      <Wallet size={18} />
+                      <h3>On-Chain Security & Payments</h3>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="space-y-2">
+                        <p className="text-zinc-100 text-xs font-bold">Base Mainnet</p>
+                        <p className="text-zinc-500 text-[10px] leading-relaxed">All operations happen on Base, ensuring low fees and high throughput. Your agent's earnings are 100% USDC.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-zinc-100 text-xs font-bold">Treasury Control</p>
+                        <p className="text-zinc-500 text-[10px] leading-relaxed">Initial stakes are handled via secure smart contract transfers. You retain the ability to collect accrued profits at any time.</p>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-zinc-100 text-xs font-bold">Self-Custody</p>
+                        <p className="text-zinc-500 text-[10px] leading-relaxed">We never store your private keys. The agent operates within the permissions granted during your initial set up.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Help Footer */}
+                  <div className="flex flex-col items-center justify-center pt-6 border-t border-zinc-800/50">
+                    <div className="flex items-center gap-2 text-zinc-400 text-xs mb-2">
+                      <HelpCircle size={14} />
+                      <span>Still have questions?</span>
+                    </div>
+                    <p className="text-zinc-600 text-[11px]">Join our Farcaster community or reach out on X for technical support.</p>
+                  </div>
+
                 </div>
               )}
             </div>
@@ -774,6 +934,66 @@ export const Dashboard: React.FC = () => {
                   className="flex-1 bg-zinc-800 text-zinc-400 py-2 rounded-lg text-sm font-bold hover:bg-zinc-700 transition-colors"
                 >
                   Close
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Status Toggle Confirmation Modal */}
+      <AnimatePresence>
+        {statusToggleTask && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setStatusToggleTask(null)}
+              className="absolute inset-0 bg-zinc-950/90 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 text-center"
+            >
+              <div className={cn(
+                "w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4",
+                statusToggleTask.status === 'ACTIVE' ? "bg-rose-500/10 text-rose-500" : "bg-emerald-500/10 text-emerald-500"
+              )}>
+                <Zap size={32} />
+              </div>
+              <h3 className="text-xl font-bold text-zinc-100 mb-2">
+                {statusToggleTask.status === 'ACTIVE' ? 'Deactivate' : 'Activate'} Strategy?
+              </h3>
+              <p className="text-zinc-500 text-sm mb-8">
+                Are you sure you want to {statusToggleTask.status === 'ACTIVE' ? 'stop' : 'start'} the <span className="text-zinc-300 font-bold">{statusToggleTask.title}</span> autonomous operations on Base mainnet?
+              </p>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => {
+                    setTasks(tasks.map(t => 
+                      t.id === statusToggleTask.id 
+                        ? { ...t, status: t.status === 'ACTIVE' ? 'IDLE' : 'ACTIVE' } 
+                        : t
+                    ));
+                    setStatusToggleTask(null);
+                  }}
+                  className={cn(
+                    "flex-1 py-3 rounded-xl font-bold text-sm transition-all",
+                    statusToggleTask.status === 'ACTIVE' 
+                      ? "bg-rose-600 text-white hover:bg-rose-500 shadow-lg shadow-rose-900/20" 
+                      : "bg-emerald-600 text-white hover:bg-emerald-500 shadow-lg shadow-emerald-900/20"
+                  )}
+                >
+                  Confirm Change
+                </button>
+                <button 
+                  onClick={() => setStatusToggleTask(null)}
+                  className="flex-1 py-3 bg-zinc-800 text-zinc-400 rounded-xl font-bold text-sm hover:bg-zinc-700 transition-colors"
+                >
+                  Cancel
                 </button>
               </div>
             </motion.div>
